@@ -1,0 +1,9 @@
+[package]
+name = "exec-guard"
+version = "0.1.0"
+authors = ["lucky"]
+edition = "2018"
+
+[dependencies]
+palaver = "0.2"
+sha2 = "0.9"
