@@ -94,7 +94,7 @@ fn get_opts() -> Result<Opts> {
             _ => {}
         }
     }
-    let hash_len = Sha256::output_size() * 2;
+    let hash_len = Sha256::output_size() << 1;
     if opts.hash.len() != hash_len {
         exit_usage("invalid hash");
     }
