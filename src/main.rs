@@ -2,15 +2,16 @@ use std::convert::Infallible;
 use std::env;
 use std::error;
 use std::ffi::CString;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{self, Read, Write};
 use std::num::ParseIntError;
-use std::os::unix::io::FromRawFd;
+use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::result;
 
-use palaver::file::{fexecve, memfd_create};
+use nix::{fcntl, unistd};
+use palaver::file::{fexecve, memfd_create, pipe, seal_fd};
 use sha2::{Digest, Sha256};
 
 const EXIT_SUCCESS: i32 = 0;
@@ -89,28 +90,25 @@ fn get_opts() -> Result<Opts> {
             }
             flag::SCRIPT => match argv.next() {
                 Some(s) => opts.script_hash = Some(s),
-                None => exit_usage("missing script argument"),
+                None => exit_usage("missing script hash"),
             },
             _ => {}
         }
     }
     let hash_len = Sha256::output_size() << 1;
     if opts.hash.len() != hash_len {
-        exit_usage("invalid hash");
+        exit_usage("invalid executable hash");
     }
-    opts.path = argv.next().unwrap_or_default().into();
-    if opts.path.as_os_str().is_empty() {
-        exit_usage("invalid path");
-    }
-    opts.args = argv.collect();
     if let Some(s) = &opts.script_hash {
         if s.len() != hash_len {
             exit_usage("invalid script hash");
         }
-        if opts.args.len() < 2 {
-            exit_usage("missing script path");
-        }
     }
+    opts.path = argv.next().unwrap_or_default().into();
+    if opts.path.as_os_str().is_empty() {
+        exit_usage("invalid executable path");
+    }
+    opts.args = argv.collect();
     Ok(opts)
 }
 
@@ -140,7 +138,7 @@ where
         let n = match file1.read(&mut buf) {
             Ok(0) => {
                 if hasher.finalize()[..] != raw_hash {
-                    return Err("hash mismatch".into());
+                    return Err("executable hash mismatch".into());
                 }
                 break;
             }
@@ -152,6 +150,7 @@ where
         hasher.write_all(data)?;
         file2.write_all(data)?;
     }
+    seal_fd(fd);
     let mut args_c = Vec::with_capacity(1);
     args_c.push(CString::new(path.to_str().unwrap())?);
     for arg in args {
@@ -168,15 +167,19 @@ where
 }
 
 fn main() -> Result<()> {
-    let mut opts = get_opts()?;
+    let opts = get_opts()?;
     if let Some(s) = &opts.script_hash {
         let raw_hash = decode_hex(s)?;
-        assert!(opts.args.len() >= 2);
-        let data = fs::read(&opts.args[1])?;
+        let mut data = Vec::new();
+        let mut stdin = io::stdin();
+        stdin.read_to_end(&mut data)?;
         if Sha256::digest(&data)[..] != raw_hash {
             return Err("script hash mismatch".into());
         }
-        opts.args[1] = String::from_utf8(data)?;
+        let (pr, pw) = pipe(fcntl::OFlag::O_CLOEXEC)?;
+        unistd::dup2(pr, stdin.as_raw_fd())?;
+        let mut file = unsafe { File::from_raw_fd(pw) };
+        file.write_all(&data)?;
     }
     exec(&opts.hash, &opts.path, &opts.args)?;
     Ok(())

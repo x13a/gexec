@@ -1,9 +1,10 @@
 [package]
 name = "exec-guard"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["lucky"]
 edition = "2018"
 
 [dependencies]
+nix = "0.15"
 palaver = "0.2"
 sha2 = "0.9"

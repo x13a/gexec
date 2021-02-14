@@ -32,12 +32,12 @@ exec-guard [-h|V] [-s SHA256] <SHA256> <EXECUTABLE> [..ARGS]
 
 ## Example
 
-To check and exec file:
+To check and exec binary:
 ```sh
-$ exec-guard 68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9 /usr/bin/uname -a
+$ exec-guard "68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9" /usr/bin/uname -a
 ```
 
 To check and exec script:
 ```sh
-$ exec-guard -s "SCRIPT_SHA256" "EXCUTABLE_SHA256" /usr/bin/python -c /path/to/file.py
+$ cat /path/to/file.py | exec-guard -s "SCRIPT_SHA256" "EXECUTABLE_SHA256" /usr/bin/python
 ```
