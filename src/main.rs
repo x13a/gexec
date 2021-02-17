@@ -2,8 +2,8 @@ use std::convert::Infallible;
 use std::env;
 use std::error;
 use std::ffi::CString;
-use std::fs::File;
-use std::io::{self, Read, Write};
+use std::fs::{self, File};
+use std::io::{self, Read, Stdin, Write};
 use std::num::ParseIntError;
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
@@ -20,7 +20,8 @@ const EXIT_USAGE: i32 = 2;
 mod flag {
     pub const HELP: &'static str = "h";
     pub const VERSION: &'static str = "V";
-    pub const SCRIPT: &'static str = "s";
+    pub const EXECUTABLE_HASH: &'static str = "e";
+    pub const SCRIPT_HASH: &'static str = "s";
 }
 
 enum PrintDestination {
@@ -30,9 +31,10 @@ enum PrintDestination {
 
 fn print_usage(to: PrintDestination) {
     let usage = format!(
-        "{P} [-{h}|{V}] [-{s} SHA256] <SHA256> <EXECUTABLE> [..ARGS]\n\n\
+        "{P} [-{h}|{V}] [-{e} SHA256] [-{s} SHA256] <EXECUTABLE_PATH> [<SCRIPT_PATH>] [..ARGS]\n\n\
          [-{h}] * Print help and exit\n\
          [-{V}] * Print version and exit\n\
+         [-{e}] * Executable hash\n\
          [-{s}] * Script hash",
         P = PathBuf::from(env::args_os().next().unwrap())
             .file_name()
@@ -40,7 +42,8 @@ fn print_usage(to: PrintDestination) {
             .to_string_lossy(),
         h = flag::HELP,
         V = flag::VERSION,
-        s = flag::SCRIPT,
+        e = flag::EXECUTABLE_HASH,
+        s = flag::SCRIPT_HASH,
     );
     match to {
         PrintDestination::Stdout => println!("{}", usage),
@@ -52,9 +55,10 @@ type Result<T> = result::Result<T, Box<dyn error::Error>>;
 
 #[derive(Default)]
 struct Opts {
+    executable_hash: Option<String>,
     script_hash: Option<String>,
-    hash: String,
-    path: PathBuf,
+    executable_path: PathBuf,
+    script_path: Option<PathBuf>,
     args: Vec<String>,
 }
 
@@ -75,8 +79,8 @@ fn get_opts() -> Result<Opts> {
             Some(s) => s,
             None => break,
         };
-        if !arg.starts_with('-') {
-            opts.hash = arg;
+        if !arg.starts_with('-') || arg == "-" {
+            opts.executable_path = arg.into();
             break;
         }
         match arg[1..].as_ref() {
@@ -88,28 +92,61 @@ fn get_opts() -> Result<Opts> {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 exit(EXIT_SUCCESS);
             }
-            flag::SCRIPT => match argv.next() {
+            flag::EXECUTABLE_HASH => match argv.next() {
+                Some(s) => opts.executable_hash = Some(s),
+                None => exit_usage("missing executable hash"),
+            },
+            flag::SCRIPT_HASH => match argv.next() {
                 Some(s) => opts.script_hash = Some(s),
                 None => exit_usage("missing script hash"),
             },
             _ => {}
         }
     }
+    if opts.executable_path.as_os_str().is_empty() {
+        exit_usage("empty executable path");
+    }
     let hash_len = Sha256::output_size() << 1;
-    if opts.hash.len() != hash_len {
-        exit_usage("invalid executable hash");
+    if let Some(s) = &opts.executable_hash {
+        if s.len() != hash_len {
+            exit_usage("invalid executable hash");
+        }
     }
     if let Some(s) = &opts.script_hash {
         if s.len() != hash_len {
             exit_usage("invalid script hash");
         }
-    }
-    opts.path = argv.next().unwrap_or_default().into();
-    if opts.path.as_os_str().is_empty() {
-        exit_usage("invalid executable path");
+        match argv.next() {
+            Some(s) => opts.script_path = Some(s.into()),
+            None => exit_usage("missing script path"),
+        }
     }
     opts.args = argv.collect();
     Ok(opts)
+}
+
+trait IsStdin {
+    fn is_stdin(&self) -> bool;
+}
+
+impl IsStdin for Path {
+    fn is_stdin(&self) -> bool {
+        self == Path::new("-")
+    }
+}
+
+enum Input {
+    Stdin(Stdin),
+    File(File),
+}
+
+impl Read for Input {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Stdin(f) => f.read(buf),
+            Self::File(f) => f.read(buf),
+        }
+    }
 }
 
 fn decode_hex(s: impl AsRef<str>) -> result::Result<Vec<u8>, ParseIntError> {
@@ -120,35 +157,43 @@ fn decode_hex(s: impl AsRef<str>) -> result::Result<Vec<u8>, ParseIntError> {
         .collect()
 }
 
-fn exec<S1, S2, S3, T>(hash: S1, path: S2, args: T) -> Result<Infallible>
+fn exec<S1, S2, S3, T>(path: S1, args: T, hash: Option<S3>) -> Result<Infallible>
 where
-    S1: AsRef<str>,
-    S2: AsRef<Path>,
+    S1: AsRef<Path>,
+    S2: AsRef<str>,
     S3: AsRef<str>,
-    T: IntoIterator<Item = S3>,
+    T: IntoIterator<Item = S2>,
 {
-    let raw_hash = decode_hex(hash.as_ref())?;
     let path = path.as_ref();
-    let mut file1 = File::open(path)?;
+    let mut file1 = if path.is_stdin() {
+        Input::Stdin(io::stdin())
+    } else {
+        Input::File(File::open(path)?)
+    };
     let fd = memfd_create(&CString::new("")?, true)?;
     let mut file2 = unsafe { File::from_raw_fd(fd) };
-    let mut buf = [0; 1 << 13];
-    let mut hasher = Sha256::new();
-    loop {
-        let n = match file1.read(&mut buf) {
-            Ok(0) => {
-                if hasher.finalize()[..] != raw_hash {
-                    return Err("executable hash mismatch".into());
+    if let Some(hash) = &hash {
+        let raw_hash = decode_hex(hash.as_ref())?;
+        let mut buf = [0; 1 << 13];
+        let mut hasher = Sha256::new();
+        loop {
+            let n = match file1.read(&mut buf) {
+                Ok(0) => {
+                    if hasher.finalize()[..] != raw_hash {
+                        return Err("executable hash mismatch".into());
+                    }
+                    break;
                 }
-                break;
-            }
-            Ok(n) => n,
-            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
-            Err(err) => return Err(err.into()),
-        };
-        let data = &buf[..n];
-        hasher.write_all(data)?;
-        file2.write_all(data)?;
+                Ok(n) => n,
+                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Err(err) => return Err(err.into()),
+            };
+            let data = &buf[..n];
+            hasher.write_all(data)?;
+            file2.write_all(data)?;
+        }
+    } else {
+        io::copy(&mut file1, &mut file2)?;
     }
     seal_fd(fd);
     let mut args_c = Vec::with_capacity(1);
@@ -169,10 +214,16 @@ where
 fn main() -> Result<()> {
     let opts = get_opts()?;
     if let Some(s) = &opts.script_hash {
+        assert!(opts.script_path.is_some());
         let raw_hash = decode_hex(s)?;
         let mut data = Vec::new();
         let mut stdin = io::stdin();
-        stdin.read_to_end(&mut data)?;
+        let path = &opts.script_path.unwrap();
+        if path.is_stdin() {
+            stdin.read_to_end(&mut data)?;
+        } else {
+            data = fs::read(path)?;
+        }
         if Sha256::digest(&data)[..] != raw_hash {
             return Err("script hash mismatch".into());
         }
@@ -181,7 +232,7 @@ fn main() -> Result<()> {
         let mut file = unsafe { File::from_raw_fd(pw) };
         file.write_all(&data)?;
     }
-    exec(&opts.hash, &opts.path, &opts.args)?;
+    exec(&opts.executable_path, &opts.args, opts.executable_hash)?;
     Ok(())
 }
 
@@ -194,9 +245,9 @@ mod tests {
     fn exec_ok() {
         let args: &[String] = &[];
         assert!(!exec(
-            "a7ca60660f08c3907fdf383afc360dd9a0a18da9623ce9d7b2852451ac2dfa5e",
             "/usr/bin/true",
             args,
+            Some("a7ca60660f08c3907fdf383afc360dd9a0a18da9623ce9d7b2852451ac2dfa5e"),
         )
         .is_err());
     }
@@ -206,9 +257,9 @@ mod tests {
     fn exec_err() {
         let args: &[String] = &[];
         assert!(exec(
-            "68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9",
             "/usr/bin/true",
             args,
+            Some("68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9"),
         )
         .is_err());
     }

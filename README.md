@@ -23,10 +23,11 @@ $ brew install x13a/tap/exec-guard
 
 ## Usage
 ```text
-exec-guard [-h|V] [-s SHA256] <SHA256> <EXECUTABLE> [..ARGS]
+exec-guard [-h|V] [-e SHA256] [-s SHA256] <EXECUTABLE_PATH> [<SCRIPT_PATH>] [..ARGS]
 
 [-h] * Print help and exit
 [-V] * Print version and exit
+[-e] * Executable hash
 [-s] * Script hash
 ```
 
@@ -34,10 +35,10 @@ exec-guard [-h|V] [-s SHA256] <SHA256> <EXECUTABLE> [..ARGS]
 
 To check and exec binary:
 ```sh
-$ exec-guard "68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9" /usr/bin/uname -a
+$ exec-guard -e "68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9" /usr/bin/uname -a
 ```
 
 To check and exec script:
 ```sh
-$ cat /path/to/file.py | exec-guard -s "SCRIPT_SHA256" "EXECUTABLE_SHA256" /usr/bin/python
+$ exec-guard -e "EXECUTABLE_SHA256" -s "SCRIPT_SHA256" /usr/bin/python /path/to/file.py
 ```
