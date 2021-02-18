@@ -68,8 +68,9 @@ dependencies = [
 
 [[package]]
 name = "exec-guard"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
+ "minisign-verify",
  "nix",
  "palaver",
  "sha2",
@@ -144,6 +145,12 @@ checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "minisign-verify"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db0507fe8e3c68cd62961cf9f87f6c2b21d884d3515a7150a4a3fa9d014e5c12"
 
 [[package]]
 name = "nix"
