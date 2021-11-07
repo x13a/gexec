@@ -1,4 +1,4 @@
-NAME        := exec-guard
+NAME        := gexec
 
 prefix      ?= /usr/local
 exec_prefix ?= $(prefix)

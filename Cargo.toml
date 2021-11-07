@@ -1,6 +1,6 @@
 [package]
-name = "exec-guard"
-version = "0.3.1"
+name = "gexec"
+version = "0.3.2"
 authors = ["lucky"]
 edition = "2018"
 

@@ -1,4 +1,4 @@
-# exec-guard
+# gexec
 
 Execution guard.
 
@@ -14,15 +14,15 @@ $ sudo make install
 or
 ```sh
 $ brew tap x13a/tap
-$ brew install x13a/tap/exec-guard
+$ brew install x13a/tap/gexec
 ```
 
 ## Usage
 ```text
-exec-guard [-h|V] [-x] [-P PUBLIC_KEY]
-           [-E SIG_PATH] [-e SHA256]
-           [-S SIG_PATH] [-s SHA256]
-           <EXECUTABLE_PATH> [<SCRIPT_PATH>] [..ARGS]
+gexec [-h|V] [-x] [-P PUBLIC_KEY]
+      [-E SIG_PATH] [-e SHA256]
+      [-S SIG_PATH] [-s SHA256]
+      <EXECUTABLE_PATH> [<SCRIPT_PATH>] [..ARGS]
 
 [-h] * Print help and exit
 [-V] * Print version and exit
@@ -38,25 +38,25 @@ exec-guard [-h|V] [-x] [-P PUBLIC_KEY]
 
 To check and exec binary (sha256):
 ```sh
-$ exec-guard -e "68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9" /usr/bin/uname -a
+$ gexec -e "68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9" /usr/bin/uname -a
 ```
 
 To check and exec script (sha256):
 ```sh
-$ exec-guard -x -s "SCRIPT_SHA256" /usr/bin/python /path/to/file.py
+$ gexec -x -s "SCRIPT_SHA256" /usr/bin/python /path/to/file.py
 ```
 
 To check and exec binary (minisign):
 ```sh
-$ exec-guard -P "MINISIGN_BASE64_PUBLIC_KEY" /usr/bin/true
+$ gexec -P "MINISIGN_BASE64_PUBLIC_KEY" /usr/bin/true
 ```
 
 To exec binary from memory:
 ```sh
-$ cat /usr/bin/uname | exec-guard -
+$ cat /usr/bin/uname | gexec -
 ```
 
 To check and exec script from memory (sha256):
 ```sh
-$ cat /path/to/file.py | exec-guard -x -s "SCRIPT_SHA256" /usr/bin/python -
+$ cat /path/to/file.py | gexec -x -s "SCRIPT_SHA256" /usr/bin/python -
 ```
