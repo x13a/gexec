@@ -11,11 +11,6 @@ Execution guard.
 $ make
 $ sudo make install
 ```
-or
-```sh
-$ brew tap x13a/tap
-$ brew install x13a/tap/gexec
-```
 
 ## Usage
 ```text
@@ -38,7 +33,7 @@ gexec [-h|V] [-x] [-P PUBLIC_KEY]
 
 To check and exec binary (sha256):
 ```sh
-$ gexec -e "68c1f856c32e521cc04d3d8f28a548c3e66e26b64d25ee10e907dd9b68fdc1c9" /usr/bin/uname -a
+$ gexec -e "SHA256" /usr/bin/uname -a
 ```
 
 To check and exec script (sha256):
