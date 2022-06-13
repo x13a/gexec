@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 minisign-verify = "0.1"
-nix = "0.15"
+nix = "0.20"
 palaver = "0.2"
 sha2 = "0.9"
